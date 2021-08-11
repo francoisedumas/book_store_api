@@ -347,3 +347,20 @@ describe 'Books API', type: :request do
   end
 end
 ```
+#### Drying test
+Testing API we often use `JSON.parse(response.body)` to dry it up create a request_helper.rb file in spec folder
+```ruby
+module RequestHelper
+  def response_body
+    JSON.parse(response.body)
+  end
+end
+```
+In the spec_helper.rb file
+```ruby
+require 'request_helper'
+# ...
+# at the bottom in the config area before the last end add
+config.include RequestHelper, type: :request
+```
+Now in every Rspec file with `type: :request` you can replace `JSON.parse(response.body)` by `response_body` and you don't need to use `require 'request_helper'` at the top of the file
