@@ -436,3 +436,42 @@ RSpec.describe Api::V1::BooksController, type: :controller do
   end
 end
 ```
+
+### Adding job
+Let's pretend we want to update another API with the SKU and the name of a book posted to our api (like for stock tracking). We'll do this with a job. First `rails g job update_sku`
+```ruby
+# in the app/jobs/update_sku_job.rb
+require 'net/http'
+
+class UpdateSkuJob < ApplicationJob
+  queue_as :default
+
+  def perform(book_name)
+    uri = URI('http://localhost:4567/update_sku')
+    req = Net::HTTP::Post.new(uri, 'Content-Type' => 'application/json')
+    req.body = {sku: '123', name: book_name}.to_json
+    res = Net::HTTP.start(uri.hostname, uri.port) do |http|
+      http.request(req)
+    end
+  end
+end
+
+# in the spec/jobs/update_sku_job_spec.rb
+require 'rails_helper'
+
+RSpec.describe UpdateSkuJob, type: :job do
+  let(:book_name) { 'eloquent ruby' }
+
+  before do
+    allow(Net::HTTP).to receive(:start).and_return(true)
+  end
+
+  it 'calls SKU service with correct params' do
+    expect_any_instance_of(Net::HTTP::Post).to receive(:body=).with(
+      {sku: '123', name: book_name}.to_json
+    )
+
+    described_class.perform_now(book_name)
+  end
+end
+```
