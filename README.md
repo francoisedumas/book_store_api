@@ -209,7 +209,7 @@ else
 ### Adding tests 😇
 
 Go to your Gemfil and add below gem
-```
+```ruby
 group :development, :test do
   #...
   gem 'rspec-rails'
@@ -449,12 +449,15 @@ class UpdateSkuJob < ApplicationJob
   def perform(book_name)
     uri = URI('http://localhost:4567/update_sku')
     req = Net::HTTP::Post.new(uri, 'Content-Type' => 'application/json')
-    req.body = {sku: '123', name: book_name}.to_json
+    req.body = {sku: '123', title: book_name}.to_json
     res = Net::HTTP.start(uri.hostname, uri.port) do |http|
       http.request(req)
     end
   end
 end
+
+# in the BooksController in the create function add
+UpdateSkuJob.perform_later(book_params[:title])
 
 # in the spec/jobs/update_sku_job_spec.rb
 require 'rails_helper'
@@ -468,10 +471,136 @@ RSpec.describe UpdateSkuJob, type: :job do
 
   it 'calls SKU service with correct params' do
     expect_any_instance_of(Net::HTTP::Post).to receive(:body=).with(
-      {sku: '123', name: book_name}.to_json
+      {sku: '123', title: book_name}.to_json
     )
 
     described_class.perform_now(book_name)
+  end
+end
+```
+
+### JWT Authentication
+Now we will add an authentication service. First we need to add a route in the namespace V1.
+```ruby
+  post 'authenticate', to: 'authentication#create'
+```
+#### Without gem JWT (temporary)
+Add the below controller
+```ruby
+module Api
+  module V1
+    class AuthenticationController < ApplicationController
+      rescue_from ActionController::ParameterMissing, with: :parameter_missing
+
+      def create
+        params.require(:username).inspect
+        params.require(:password).inspect
+
+        render json: { token: '123'}, status: :created
+      end
+
+      private
+
+      def parameter_missing(e)
+        render json: { error: e.message }, status: :unprocessable_entity
+      end
+    end
+  end
+end
+```
+
+Associated tests here
+```ruby
+require 'rails_helper'
+
+describe 'Books API', type: :request do
+  describe 'POST /authenticate' do
+    it 'authenticates the client' do
+      post '/api/v1/authenticate', params: { username: 'BookSeller99', password: 'Password1' }
+
+      expect(response).to have_http_status(:created)
+      expect(response_body).to eq({
+        'token' => '123'
+      })
+    end
+
+    it 'returns error when username is missing' do
+      post '/api/v1/authenticate', params: { password: 'Password1' }
+
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response_body).to eq({
+        'error' => 'param is missing or the value is empty: username'
+      })
+    end
+
+    it 'returns error when password is missing' do
+      post '/api/v1/authenticate', params: { username: 'BookSeller99' }
+
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response_body).to eq({
+        'error' => 'param is missing or the value is empty: password'
+      })
+    end
+  end
+end
+
+```
+
+#### Using gem for JWT
+Add a services folder in your app/ folder and create a file authentication_token_service.rb
+```
+/app
+    /services
+      authentication_token_service.rb
+```
+
+Go to your Gemfil and add below gem
+```ruby
+# JWT devise for API
+# https://github.com/jwt/ruby-jwt
+gem 'jwt'
+```
+
+Below is the JWT setup, you can find the detail in the HMAC section of https://github.com/jwt/ruby-jwt
+```ruby
+class AuthenticationTokenService
+  HMAC_SECRET = 'my$ecretK3y'
+  ALGORITHM_TYPE = 'HS256'
+
+  def self.call
+    payload = {"test" => "blah"}
+
+    JWT.encode payload, HMAC_SECRET, ALGORITHM_TYPE
+  end
+end
+```
+
+Add a folder to your test spec/services and a file authentication_token_service.rb
+```ruby
+require 'rails_helper'
+
+# Here we will test a class method
+describe AuthenticationTokenService do
+  describe '.call' do # Here call is a method of the class AuthenticationTokenService
+    it 'returns an authentication token' do
+
+      # See the decode part of HMAC https://github.com/jwt/ruby-jwt
+
+      token = described_class.call
+      decoded_token = JWT.decode(
+        token,
+        described_class::HMAC_SECRET,
+        true,
+        { algorithm: described_class::ALGORITHM_TYPE }
+      )
+
+      expect(decoded_token).to eq(
+        [
+          {"test" => "blah"}, # payload
+          {"alg"=>"HS256"} # header
+        ]
+      )
+    end
   end
 end
 ```
