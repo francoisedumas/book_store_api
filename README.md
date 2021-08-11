@@ -582,11 +582,10 @@ require 'rails_helper'
 # Here we will test a class method
 describe AuthenticationTokenService do
   describe '.call' do # Here call is a method of the class AuthenticationTokenService
+    let(:token) { described_class.call }
+
     it 'returns an authentication token' do
-
       # See the decode part of HMAC https://github.com/jwt/ruby-jwt
-
-      token = described_class.call
       decoded_token = JWT.decode(
         token,
         described_class::HMAC_SECRET,
@@ -604,3 +603,38 @@ describe AuthenticationTokenService do
   end
 end
 ```
+
+### Adding User
+`rails g model User username:string`
+`rails db:migrate`
+
+Now we have a real user so let's update the authentication_controller.rb
+```ruby
+# ...
+def create
+  params.require(:username).inspect
+
+  user = User.find_by(username: params.require(:username))
+  token = AuthenticationTokenService.call(user.id)
+
+  render json: { token: token }, status: :created
+end
+```
+
+And the authentication_token_service.rb
+```ruby
+# ... the payload is now replace by the user ID
+def self.call(user_id)
+  # payload = {"test" => "blah"} # this is the old one before user is created
+  payload = {user_id: user_id}
+#...
+```
+
+
+### Cool console test
+Create a user in the console `User.create!(username: 'BookSeller99')`
+Then run a server `rails s` and the next command in the console to do a CURL request to the authentication endpoint `curl -X POST http://localhost:3000/api/v1/authenticate -H "Content-Type: application/json" -d '{"username": "BookSeller99", "password": "blah"}' -v`
+It returns the token `eyJhbGciOiJIUzI1NiJ9.eyJ1c2VyX2lkIjoxfQ.DiPWrOKsx3sPeVClrm_j07XNdSYHgBa3Qctosdxax3w`
+Go on the website jwt.io and past this token with your key `my$ecretK3y` and you can see the signature verified!
+
+<img width="1189" alt="Screenshot 2021-08-11 at 17 02 09" src="https://user-images.githubusercontent.com/33062224/129053992-6761aff7-2af0-4df1-9b2a-02a24d0696b5.png">
