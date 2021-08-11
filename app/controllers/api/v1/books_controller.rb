@@ -4,7 +4,7 @@ module Api
       def index
         books = Book.all
 
-        render json: books
+        render json: BooksRepresenter.new(books).as_json
       end
 
       def create
@@ -13,7 +13,7 @@ module Api
         book.author = author
 
         if book.save
-          render json: books
+          render json: BookRepresenter.new(book).as_json, status: :created
         else
           render json: book.errors, status: :unprocessable_entity
         end
