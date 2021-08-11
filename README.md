@@ -114,3 +114,67 @@ module Api
   end
 end
 ```
+
+### Manual Seeds
+
+Let's create some data go in the irb
+`author = Author.create!(first_name: 'George', last_name: 'Orwell', age: 50)`
+`Book.create!(title: '1984', author: author)`
+`Book.create!(title: 'Animal Farm', author: author)`
+
+### Representer
+
+So far we push everything in our API let's shape it as we want it to be
+Add a representers folder in your app/ folder
+```
+/app
+    /representers
+      books_representer.rb
+```
+Add the below code
+```ruby
+class BooksRepresenter
+  def initialize(books)
+    @books = books
+  end
+
+  def as_json
+    books.map do |book|
+      {
+        id: book.id,
+        title: book.title,
+        author_name: author_name(book),
+        author_age: book.author.age
+      }
+    end
+  end
+
+  private
+
+  attr_reader :books
+
+  def author_name(book)
+    "#{book.author.first_name} #{book.author.last_name}"
+  end
+end
+```
+
+In the books controller replace as below
+```ruby
+# before
+def index
+  render json: Book.all
+end
+
+#after
+def index
+  books = Book.all
+
+  render json: BooksRepresenter.new(books).as_json
+end
+
+# in the create function do the same update
+if book.save
+  render json: BookRepresenter.new(book).as_json, status: :created
+else
+```
