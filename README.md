@@ -1,6 +1,7 @@
 # RoR API
 ## Introduction to API using Ruby on Rails
 
+This API exercise is based on the video series https://youtu.be/6KqbPJtA5O8
 The target is to build a simple book store application using
  - RoR as an API back end
  - ...
