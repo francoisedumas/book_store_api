@@ -130,8 +130,9 @@ Add a representers folder in your app/ folder
 /app
     /representers
       books_representer.rb
+      book_representer.rb
 ```
-Add the below code
+Add the below code for the books
 ```ruby
 class BooksRepresenter
   def initialize(books)
@@ -152,6 +153,32 @@ class BooksRepresenter
   private
 
   attr_reader :books
+
+  def author_name(book)
+    "#{book.author.first_name} #{book.author.last_name}"
+  end
+end
+```
+
+And below code for book
+```ruby
+class BookRepresenter
+  def initialize(book)
+    @book = book
+  end
+
+  def as_json
+    {
+      id: book.id,
+      title: book.title,
+      author_name: author_name(book),
+      author_age: book.author.age
+    }
+  end
+
+  private
+
+  attr_reader :book
 
   def author_name(book)
     "#{book.author.first_name} #{book.author.last_name}"
