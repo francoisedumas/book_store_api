@@ -21,3 +21,31 @@ git add . && git commit -m "Book store api"
 gh repo create
 git push origin master
 ```
+### Generating the author and book model
+
+```
+rails g model Book title:string
+rails g model Author first_name:string last_name:string age:integer
+rails db:migrate
+rails g migration add_author_to_books author:references
+```
+In this last migration file modify as below removing `null: false, foreign_key: true`
+```ruby
+class AddAuthorToBooks < ActiveRecord::Migration[6.1]
+  def change
+    add_reference :books, :author
+  end
+end
+```
+Then `rails db:migrate`
+
+Now let's update the book model adding a validation and association
+```ruby
+  validates :title, presence: true, length: {minimum: 3}
+  belongs_to :author
+```
+
+And similarly for the author model
+```ruby
+  has_many :books
+```
