@@ -364,3 +364,74 @@ require 'request_helper'
 config.include RequestHelper, type: :request
 ```
 Now in every Rspec file with `type: :request` you can replace `JSON.parse(response.body)` by `response_body` and you don't need to use `require 'request_helper'` at the top of the file
+
+### Pagination
+To avoid sending to much information through the API we can use pagination to limit the size of info sent.
+In the books_controller.rb
+```ruby
+# add the constant
+MAX_PAGINATION_LIMIT = 100
+# in the index function use below code instead
+books = Book.limit(limit).offset(params[:offset])
+render json: BooksRepresenter.new(books).as_json
+# in the private section add the next function
+def limit
+  [
+    params.fetch(:limit, MAX_PAGINATION_LIMIT).to_i,
+    MAX_PAGINATION_LIMIT
+  ].min
+end
+```
+
+#### Request test
+Add the next 2 tests to the 'GET /books' test
+```ruby
+it 'returns a subset of books based on limit' do
+      get '/api/v1/books', params: { limit: 1 }
+
+      expect(response).to have_http_status(:success)
+      expect(response_body.size).to eq(1)
+      expect(response_body).to eq(
+        [
+          {
+          'id' => 1,
+          'title' => '1984',
+          'author_name' => 'George Orwell',
+          'author_age' => 50
+          }
+        ]
+      )
+    end
+
+    it 'returns a subset of books based on limit and offset' do
+      get '/api/v1/books', params: { limit: 1, offset: 1 }
+
+      expect(response).to have_http_status(:success)
+      expect(response_body.size).to eq(1)
+      expect(response_body).to eq(
+        [
+          {
+          'id' => 2,
+          'title' => 'The Time Machine',
+          'author_name' => 'H.G Wells',
+          'author_age' => 70
+          }
+        ]
+      )
+    end
+```
+
+#### Controllers tests
+Create a spec/controllers folder and add a books_controller_spec.rb file
+```ruby
+require 'rails_helper'
+
+RSpec.describe Api::V1::BooksController, type: :controller do
+  it 'has a max limit of 100' do
+    # explanation https://youtu.be/SQhj5gBNTB0 about 7:40
+    expect(Book).to receive(:limit).with(100).and_call_original
+
+    get :index, params: { limit: 999 }
+  end
+end
+```
