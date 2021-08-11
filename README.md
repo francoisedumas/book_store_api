@@ -49,3 +49,68 @@ And similarly for the author model
 ```ruby
   has_many :books
 ```
+
+### API: routes & controllers
+
+Now we will create the structure of our app for the API.
+Go to the file routes.rb and create the below routes
+```ruby
+namespace :api do
+  namespace :v1 do
+    resources :books, only: [:index, :create, :destroy]
+  end
+end
+```
+build the next folder structure in your app/controllers folder
+```
+/controllers
+    /api
+        /v1
+```
+In this folder create books_controller.rb
+
+### Book controller
+
+In your Book controller file add below controller
+Comment: the module API / module V1 structure is key
+```ruby
+module Api
+  module V1
+    class BooksController < ApplicationController
+      def index
+        books = Book.all
+
+        render json: books
+      end
+
+      def create
+        author = Author.create!(author_params)
+        book = Book.new(book_params)
+        book.author = author
+
+        if book.save
+          render json: books
+        else
+          render json: book.errors, status: :unprocessable_entity
+        end
+      end
+
+      def destroy
+        Book.find(params[:id]).destroy!
+
+        head :no_content
+      end
+
+      private
+
+      def book_params
+        params.require(:book).permit(:title)
+      end
+
+      def author_params
+        params.require(:author).permit(:first_name, :last_name, :age)
+      end
+    end
+  end
+end
+```
