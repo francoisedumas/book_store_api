@@ -604,20 +604,53 @@ describe AuthenticationTokenService do
 end
 ```
 
-### Adding User
+### Adding User & password
 `rails g model User username:string`
 `rails db:migrate`
+`rails g migration add_password_digest_to_user password_digest:string`
+`rails db:migrate`
+Also add to the Gemfile `gem 'bcrypt', '~> 3.1.7'` and `bundle`
 
-Now we have a real user so let's update the authentication_controller.rb
+Now we have a real user so let's update the model and authentication_controller.rb
 ```ruby
-# ...
-def create
-  params.require(:username).inspect
+# user model
+class User < ApplicationRecord
+  has_secure_password
+end
+```
 
-  user = User.find_by(username: params.require(:username))
-  token = AuthenticationTokenService.call(user.id)
+```ruby
+# controller with several updates
+module Api
+  module V1
+    class AuthenticationController < ApplicationController
+      class AuthenticationError < StandardError; end
 
-  render json: { token: token }, status: :created
+      rescue_from ActionController::ParameterMissing, with: :parameter_missing
+      rescue_from AuthenticationError, with: :handle_unauthenticated
+
+      def create
+        raise AuthenticationError unless user.authenticate(params.require(:password))
+        token = AuthenticationTokenService.call(user.id)
+
+        render json: { token: token }, status: :created
+      end
+
+      private
+
+      def user
+        @user ||= User.find_by(username: params.require(:username))
+      end
+
+      def parameter_missing(e)
+        render json: { error: e.message }, status: :unprocessable_entity
+      end
+
+      def handle_unauthenticated
+        head :unauthorized
+      end
+    end
+  end
 end
 ```
 
@@ -630,10 +663,20 @@ def self.call(user_id)
 #...
 ```
 
+Finally update the test starting with the let
+`let(:user) { FactoryBot.create(:user, username: 'BookSeller99', password: 'Password1') }`
+And add a test on incorrect password
+```ruby
+it 'returns error when password is incorrect' do
+      post '/api/v1/authenticate', params: { username: user.username, password: 'incorrect' }
+
+      expect(response).to have_http_status(:unauthorized)
+    end
+```
 
 ### Cool console test
-Create a user in the console `User.create!(username: 'BookSeller99')`
-Then run a server `rails s` and the next command in the console to do a CURL request to the authentication endpoint `curl -X POST http://localhost:3000/api/v1/authenticate -H "Content-Type: application/json" -d '{"username": "BookSeller99", "password": "blah"}' -v`
+Create a user in the console `User.create!(username: 'BookSeller99', password: 'Password1')`
+Then run a server `rails s` and the next command in the console to do a CURL request to the authentication endpoint `curl -X POST http://localhost:3000/api/v1/authenticate -H "Content-Type: application/json" -d '{"username": "BookSeller99", "password": "Password1"}' -v`
 It returns the token `eyJhbGciOiJIUzI1NiJ9.eyJ1c2VyX2lkIjoxfQ.DiPWrOKsx3sPeVClrm_j07XNdSYHgBa3Qctosdxax3w`
 Go on the website jwt.io and past this token with your key `my$ecretK3y` and you can see the signature verified!
 
