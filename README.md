@@ -681,3 +681,16 @@ It returns the token `eyJhbGciOiJIUzI1NiJ9.eyJ1c2VyX2lkIjoxfQ.DiPWrOKsx3sPeVClrm
 Go on the website jwt.io and past this token with your key `my$ecretK3y` and you can see the signature verified!
 
 <img width="1189" alt="Screenshot 2021-08-11 at 17 02 09" src="https://user-images.githubusercontent.com/33062224/129053992-6761aff7-2af0-4df1-9b2a-02a24d0696b5.png">
+
+### Limiting access to the API
+Now we can restrict access to the API
+See updates in the books_controller.rb the authentication_token_service.rb and the test book_spec.rb
+
+To test it with the console
+Proper user:
+`curl --header "authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJ1c2VyX2lkIjoxfQ.DiPWrOKsx3sPeVClrm_j07XNdSYHgBa3Qctosdxax3w" --header "Content-Type: application/json" --request POST --data '{"book": { "title": "Eloquent Ruby" }, "author": { "first_name": "Russ", "last_name": "Olsen", "age": 30 }}' http://localhost:3000/api/v1/books -v`
+We got a `HTTP/1.1 201 Created`
+
+Wrong user:
+`curl --header "authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJ1c2VyX2lkIjoxMTIzNDR9.MWwcZXeo5t2WQPedcoWjg4C8GSve-yWQs275bHUm1XY" --header "Content-Type: application/json" --request POST --data '{"book": { "title": "Eloquent Ruby" }, "author": { "first_name": "Russ", "last_name": "Olsen", "age": 30 }}' http://localhost:3000/api/v1/books -v`
+We got a `HTTP/1.1 401 Unauthorized` answer
