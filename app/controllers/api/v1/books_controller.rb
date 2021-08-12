@@ -15,7 +15,7 @@ module Api
         book = Book.new(book_params)
         book.author = author
 
-        UpdateSkuJob.perform_later(book_params[:name])
+        UpdateSkuJob.perform_later(book_params[:title])
 
         if book.save
           render json: BookRepresenter.new(book).as_json, status: :created

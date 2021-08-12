@@ -209,7 +209,7 @@ else
 ### Adding tests 😇
 
 Go to your Gemfil and add below gem
-```
+```ruby
 group :development, :test do
   #...
   gem 'rspec-rails'
@@ -449,12 +449,15 @@ class UpdateSkuJob < ApplicationJob
   def perform(book_name)
     uri = URI('http://localhost:4567/update_sku')
     req = Net::HTTP::Post.new(uri, 'Content-Type' => 'application/json')
-    req.body = {sku: '123', name: book_name}.to_json
+    req.body = {sku: '123', title: book_name}.to_json
     res = Net::HTTP.start(uri.hostname, uri.port) do |http|
       http.request(req)
     end
   end
 end
+
+# in the BooksController in the create function add
+UpdateSkuJob.perform_later(book_params[:title])
 
 # in the spec/jobs/update_sku_job_spec.rb
 require 'rails_helper'
@@ -468,10 +471,213 @@ RSpec.describe UpdateSkuJob, type: :job do
 
   it 'calls SKU service with correct params' do
     expect_any_instance_of(Net::HTTP::Post).to receive(:body=).with(
-      {sku: '123', name: book_name}.to_json
+      {sku: '123', title: book_name}.to_json
     )
 
     described_class.perform_now(book_name)
   end
 end
 ```
+
+### JWT Authentication
+Now we will add an authentication service. First we need to add a route in the namespace V1.
+```ruby
+  post 'authenticate', to: 'authentication#create'
+```
+#### Without gem JWT (temporary)
+Add the below controller
+```ruby
+module Api
+  module V1
+    class AuthenticationController < ApplicationController
+      rescue_from ActionController::ParameterMissing, with: :parameter_missing
+
+      def create
+        params.require(:username).inspect
+        params.require(:password).inspect
+
+        render json: { token: '123'}, status: :created
+      end
+
+      private
+
+      def parameter_missing(e)
+        render json: { error: e.message }, status: :unprocessable_entity
+      end
+    end
+  end
+end
+```
+
+Associated tests here
+```ruby
+require 'rails_helper'
+
+describe 'Books API', type: :request do
+  describe 'POST /authenticate' do
+    it 'authenticates the client' do
+      post '/api/v1/authenticate', params: { username: 'BookSeller99', password: 'Password1' }
+
+      expect(response).to have_http_status(:created)
+      expect(response_body).to eq({
+        'token' => '123'
+      })
+    end
+
+    it 'returns error when username is missing' do
+      post '/api/v1/authenticate', params: { password: 'Password1' }
+
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response_body).to eq({
+        'error' => 'param is missing or the value is empty: username'
+      })
+    end
+
+    it 'returns error when password is missing' do
+      post '/api/v1/authenticate', params: { username: 'BookSeller99' }
+
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response_body).to eq({
+        'error' => 'param is missing or the value is empty: password'
+      })
+    end
+  end
+end
+
+```
+
+#### Using gem for JWT
+Add a services folder in your app/ folder and create a file authentication_token_service.rb
+```
+/app
+    /services
+      authentication_token_service.rb
+```
+
+Go to your Gemfil and add below gem
+```ruby
+# JWT devise for API
+# https://github.com/jwt/ruby-jwt
+gem 'jwt'
+```
+
+Below is the JWT setup, you can find the detail in the HMAC section of https://github.com/jwt/ruby-jwt
+```ruby
+class AuthenticationTokenService
+  HMAC_SECRET = 'my$ecretK3y'
+  ALGORITHM_TYPE = 'HS256'
+
+  def self.call
+    payload = {"test" => "blah"}
+
+    JWT.encode payload, HMAC_SECRET, ALGORITHM_TYPE
+  end
+end
+```
+
+Add a folder to your test spec/services and a file authentication_token_service.rb
+```ruby
+require 'rails_helper'
+
+# Here we will test a class method
+describe AuthenticationTokenService do
+  describe '.call' do # Here call is a method of the class AuthenticationTokenService
+    let(:token) { described_class.call }
+
+    it 'returns an authentication token' do
+      # See the decode part of HMAC https://github.com/jwt/ruby-jwt
+      decoded_token = JWT.decode(
+        token,
+        described_class::HMAC_SECRET,
+        true,
+        { algorithm: described_class::ALGORITHM_TYPE }
+      )
+
+      expect(decoded_token).to eq(
+        [
+          {"test" => "blah"}, # payload
+          {"alg"=>"HS256"} # header
+        ]
+      )
+    end
+  end
+end
+```
+
+### Adding User & password
+`rails g model User username:string`
+`rails db:migrate`
+`rails g migration add_password_digest_to_user password_digest:string`
+`rails db:migrate`
+Also add to the Gemfile `gem 'bcrypt', '~> 3.1.7'` and `bundle`
+
+Now we have a real user so let's update the model and authentication_controller.rb
+```ruby
+# user model
+class User < ApplicationRecord
+  has_secure_password
+end
+```
+
+```ruby
+# controller with several updates
+module Api
+  module V1
+    class AuthenticationController < ApplicationController
+      class AuthenticationError < StandardError; end
+
+      rescue_from ActionController::ParameterMissing, with: :parameter_missing
+      rescue_from AuthenticationError, with: :handle_unauthenticated
+
+      def create
+        raise AuthenticationError unless user.authenticate(params.require(:password))
+        token = AuthenticationTokenService.call(user.id)
+
+        render json: { token: token }, status: :created
+      end
+
+      private
+
+      def user
+        @user ||= User.find_by(username: params.require(:username))
+      end
+
+      def parameter_missing(e)
+        render json: { error: e.message }, status: :unprocessable_entity
+      end
+
+      def handle_unauthenticated
+        head :unauthorized
+      end
+    end
+  end
+end
+```
+
+And the authentication_token_service.rb
+```ruby
+# ... the payload is now replace by the user ID
+def self.call(user_id)
+  # payload = {"test" => "blah"} # this is the old one before user is created
+  payload = {user_id: user_id}
+#...
+```
+
+Finally update the test starting with the let
+`let(:user) { FactoryBot.create(:user, username: 'BookSeller99', password: 'Password1') }`
+And add a test on incorrect password
+```ruby
+it 'returns error when password is incorrect' do
+      post '/api/v1/authenticate', params: { username: user.username, password: 'incorrect' }
+
+      expect(response).to have_http_status(:unauthorized)
+    end
+```
+
+### Cool console test
+Create a user in the console `User.create!(username: 'BookSeller99', password: 'Password1')`
+Then run a server `rails s` and the next command in the console to do a CURL request to the authentication endpoint `curl -X POST http://localhost:3000/api/v1/authenticate -H "Content-Type: application/json" -d '{"username": "BookSeller99", "password": "Password1"}' -v`
+It returns the token `eyJhbGciOiJIUzI1NiJ9.eyJ1c2VyX2lkIjoxfQ.DiPWrOKsx3sPeVClrm_j07XNdSYHgBa3Qctosdxax3w`
+Go on the website jwt.io and past this token with your key `my$ecretK3y` and you can see the signature verified!
+
+<img width="1189" alt="Screenshot 2021-08-11 at 17 02 09" src="https://user-images.githubusercontent.com/33062224/129053992-6761aff7-2af0-4df1-9b2a-02a24d0696b5.png">
